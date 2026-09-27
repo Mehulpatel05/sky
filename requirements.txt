@@ -1,0 +1,16 @@
+python-telegram-bot>=20.0
+torch
+torchvision
+diffusers
+transformers
+accelerate
+opencv-python
+moviepy
+Pillow
+numpy
+python-dotenv
+imageio
+imageio-ffmpeg
+tqdm
+requests
+timm

@@ -1,0 +1,33 @@
+# Environment variables & secrets
+.env
+*.env
+
+# Python Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache & Compiled Files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Generated Data & Media Files
+data/photos/*
+!data/photos/.gitkeep
+data/reels/*
+!data/reels/.gitkeep
+data/log.json
+data/style_history.json
+
+# Model Weights
+models/*
+!models/.gitkeep
+
+# OS / IDE Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

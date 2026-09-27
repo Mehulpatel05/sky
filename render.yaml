@@ -1,0 +1,21 @@
+services:
+  - type: worker
+    name: vadodara-sky-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: AUTHORIZED_CHAT_ID
+        sync: false
+      - key: USE_AI_MOTION
+        value: "False"
+      - key: TARGET_WIDTH
+        value: "1080"
+      - key: TARGET_HEIGHT
+        value: "1920"
+      - key: FPS
+        value: "30"
+      - key: REEL_DURATION_SEC
+        value: "15.0"
