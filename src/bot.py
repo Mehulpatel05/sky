@@ -108,7 +108,7 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 **Vadodara Sky Challenge Status**\n\n"
         f"• **Completed Days**: {completed}/30\n"
         f"• **Next Day**: Day {next_day:02d}\n"
-        f"• **Reel Duration**: {REEL_DURATION_SEC} seconds (Full Advanced Motion Graphic Sequence)"
+        f"• **Reel Duration**: {REEL_DURATION_SEC} seconds (Full Motion Graphic Sequence)"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -135,30 +135,26 @@ async def process_photos_pipeline(update: Update, photo_items: List, day_num: in
 
     status_msg = await update.message.reply_text(
         f"📸 **Received {len(photo_paths)} sky photo(s)** for Day {day_num:02d}!\n"
-        f"⏳ Generating **15-Second Advanced Motion Graphic Reel** with dynamic transitions... Please wait.",
+        f"⏳ Generating **15-Second Motion Graphic Reel**... Please wait.",
         parse_mode="Markdown"
     )
 
     try:
-        # 1. Style Selection
         style = generate_reel_style(day_num)
 
-        # 2. Motion Generation (Single or Multi-Photo over 15s)
         raw_frames, mode_used = generate_motion(
             image_paths=photo_paths,
             motion_style=style["motion_style"],
-            duration_sec=15.0,  # Min 15s guaranteed
+            duration_sec=15.0,
             fps=FPS
         )
 
-        # 3. 15-Second Motion Graphic Text & Progress Bar Overlay
         text_frames = generate_text_overlay_frames(
             day_number=day_num,
             text_animation=style["text_animation"],
             num_frames=len(raw_frames)
         )
 
-        # 4. Composite & Render 15-Second Reel
         render_reel(
             raw_frames=raw_frames,
             text_overlay_frames=text_frames,
@@ -167,10 +163,8 @@ async def process_photos_pipeline(update: Update, photo_items: List, day_num: in
             fps=FPS
         )
 
-        # 5. Log Metadata
         log_reel_metadata(day_num, photo_paths, str(reel_path), style)
 
-        # 6. Upload 15-second Reel back to user
         photo_count_str = f"{len(photo_paths)} Photos Album" if len(photo_paths) > 1 else "1 Photo"
         caption = format_style_summary(style, mode_used) + f"\n📸 **Source**: `{photo_count_str}`\n⏱ **Duration**: `15.0 sec`"
         with open(reel_path, "rb") as video_file:
@@ -201,7 +195,7 @@ async def _finalize_media_group_after_delay(media_group_id: str):
         logger.error(f"Error in finalize media group: {e}", exc_info=True)
 
 async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles single photo and multi-photo album uploads cleanly using debounced timers."""
+    """Handles single photo and multi-photo album uploads."""
     if not check_authorized(update):
         await update.message.reply_text("⛔ Unauthorized user.")
         return
@@ -214,14 +208,12 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     highest_res_photo = photos[-1]
 
     if media_group_id:
-        # Album / Media Group upload
         if media_group_id not in MEDIA_GROUP_CACHE:
             MEDIA_GROUP_CACHE[media_group_id] = []
             MEDIA_GROUP_UPDATES[media_group_id] = update
 
         MEDIA_GROUP_CACHE[media_group_id].append(highest_res_photo)
 
-        # Cancel existing timer task and restart 2.0s debounce timer
         if media_group_id in MEDIA_GROUP_TASKS:
             MEDIA_GROUP_TASKS[media_group_id].cancel()
 
@@ -229,7 +221,6 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         MEDIA_GROUP_TASKS[media_group_id] = task
 
     else:
-        # Single photo upload
         day_num = get_next_day_number()
         await process_photos_pipeline(update, [highest_res_photo], day_num)
 
@@ -256,13 +247,32 @@ async def compile_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Compilation error: {e}", exc_info=True)
         await status_msg.edit_text(f"❌ Compilation failed: `{e}`", parse_mode="Markdown")
 
-def run_bot():
-    """Initializes and runs the Telegram bot Application."""
+async def handle_health_check(reader, writer):
+    """HTTP Health check handler for Render Free Web Service."""
+    response_body = "Vadodara Sky Challenge Bot is Live & Healthy!"
+    response = (
+        f"HTTP/1.1 200 OK\r\n"
+        f"Content-Type: text/plain\r\n"
+        f"Content-Length: {len(response_body)}\r\n"
+        f"Connection: close\r\n\r\n"
+        f"{response_body}"
+    )
+    writer.write(response.encode('utf-8'))
+    await writer.drain()
+    writer.close()
+    await writer.wait_closed()
+
+async def main_async():
+    """Runs Telegram Bot polling + Render HTTP Health Check Web Server concurrently."""
     if not TELEGRAM_BOT_TOKEN:
         print("[Error] TELEGRAM_BOT_TOKEN is not set in .env! Please configure your token.")
         return
 
-    print("🤖 Starting Vadodara Sky Challenge Telegram Bot (Advanced 15s Multi-Photo Engine)...")
+    port = int(os.getenv("PORT", 10000))
+    print(f"🌐 Starting HTTP Health Check Web Server on 0.0.0.0:{port} for Render Web Service...")
+    health_server = await asyncio.start_server(handle_health_check, '0.0.0.0', port)
+
+    print("🤖 Starting Vadodara Sky Challenge Telegram Bot...")
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_handler))
@@ -271,4 +281,17 @@ def run_bot():
     app.add_handler(CommandHandler("compile", compile_handler))
     app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
 
-    app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+
+    print("✓ Vadodara Sky Bot & Web Server successfully started!")
+    # Keep application running indefinitely
+    await asyncio.Event().wait()
+
+def run_bot():
+    """Entry point for running the bot and health server in event loop."""
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n👋 Bot stopped gracefully.")

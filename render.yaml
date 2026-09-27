@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: vadodara-sky-bot
     env: docker
     dockerfilePath: ./Dockerfile
