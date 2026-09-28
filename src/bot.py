@@ -179,6 +179,7 @@ async def process_photos_pipeline(update: Update, photo_items: List, day_num: in
             await update.message.reply_video(
                 video=video_file,
                 caption=video_caption,
+                supports_streaming=True,
                 parse_mode="Markdown"
             )
 

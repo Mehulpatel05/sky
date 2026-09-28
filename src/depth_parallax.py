@@ -99,13 +99,13 @@ def estimate_depth(img_rgb: np.ndarray) -> np.ndarray:
     return depth
 
 def enhance_image_sharpness(img_rgb: np.ndarray) -> np.ndarray:
-    """Enhances photo sharpness and cloud details using unsharp masking."""
-    gaussian_3 = cv2.GaussianBlur(img_rgb, (0, 0), 2.0)
-    unsharp = cv2.addWeighted(img_rgb, 1.25, gaussian_3, -0.25, 0)
+    """Ultra-high clarity unsharp mask sharpening for crisp cloud textures."""
+    gaussian = cv2.GaussianBlur(img_rgb, (0, 0), 3.0)
+    unsharp = cv2.addWeighted(img_rgb, 1.35, gaussian, -0.35, 0)
     return np.clip(unsharp, 0, 255).astype(np.uint8)
 
 def fit_to_vertical_canvas(image: np.ndarray, target_w: int = TARGET_WIDTH, target_h: int = TARGET_HEIGHT) -> np.ndarray:
-    """Crops and resizes image to fit 1080x1920 vertical canvas while preserving aspect ratio."""
+    """Crops and resizes image to fit 1080x1920 vertical canvas using 8x8 Lanczos resampling."""
     h, w = image.shape[:2]
     target_ratio = target_w / target_h
     img_ratio = w / h
@@ -119,7 +119,8 @@ def fit_to_vertical_canvas(image: np.ndarray, target_w: int = TARGET_WIDTH, targ
         start_y = (h - new_h) // 2
         cropped = image[start_y:start_y + new_h, :]
 
-    resized = cv2.resize(cropped, (target_w, target_h), interpolation=cv2.INTER_CUBIC)
+    # Use INTER_LANCZOS4 for maximum image sharpness and resolution detail
+    resized = cv2.resize(cropped, (target_w, target_h), interpolation=cv2.INTER_LANCZOS4)
     return resized
 
 def quintic_ease_in_out(t: float) -> float:
@@ -138,7 +139,7 @@ def generate_parallax_frames(
     target_h: int = TARGET_HEIGHT
 ) -> List[np.ndarray]:
     """
-    Generates high-end 15-second quintic-eased 2.5D depth motion frames with sharpness enhancement.
+    Generates high-end 15-second 4K/HD quality depth motion frames using Lanczos resampling & cubic remapping.
     """
     img_bgr = cv2.imread(str(image_path))
     if img_bgr is None:
@@ -146,13 +147,10 @@ def generate_parallax_frames(
 
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     img_fitted = fit_to_vertical_canvas(img_rgb, target_w, target_h)
-    
-    # Enhance sharpness & cloud detail
     img_enhanced = enhance_image_sharpness(img_fitted)
 
-    # Calculate 3D Depth Map
     depth = estimate_depth(img_enhanced)
-    depth_smooth = cv2.GaussianBlur(depth, (21, 21), 0)
+    depth_smooth = cv2.GaussianBlur(depth, (25, 25), 0)
 
     total_frames = int(duration_sec * fps)
     frames = []
@@ -160,29 +158,29 @@ def generate_parallax_frames(
     grid_y, grid_x = np.mgrid[0:target_h, 0:target_w].astype(np.float32)
 
     for i in range(total_frames):
-        t = i / max(1, total_frames - 1)  # [0..1] over 15 seconds
+        t = i / max(1, total_frames - 1)
 
         if motion_style == "parallax_pan":
-            pan_x = math.sin(t * math.pi * 1.5) * 50.0
-            pan_y = math.cos(t * math.pi) * 30.0
-            zoom = 1.05 + 0.07 * math.sin(t * math.pi)
+            pan_x = math.sin(t * math.pi * 1.5) * 45.0
+            pan_y = math.cos(t * math.pi) * 25.0
+            zoom = 1.04 + 0.05 * math.sin(t * math.pi)
 
             disp_x = (pan_x + (grid_x - target_w / 2.0) * (zoom - 1.0)) * (0.2 + 0.8 * depth_smooth)
             disp_y = (pan_y + (grid_y - target_h / 2.0) * (zoom - 1.0)) * (0.2 + 0.8 * depth_smooth)
 
         elif motion_style == "speed_ramp_zoom":
             ease_t = quintic_ease_in_out(t)
-            zoom = 1.0 + 0.16 * ease_t
-            pan_y = -35.0 * math.sin(t * math.pi)
+            zoom = 1.0 + 0.14 * ease_t
+            pan_y = -30.0 * math.sin(t * math.pi)
 
             disp_x = (grid_x - target_w / 2.0) * (zoom - 1.0) * (0.25 + 0.75 * (1.0 - depth_smooth))
             disp_y = (pan_y + (grid_y - target_h / 2.0) * (zoom - 1.0)) * (0.25 + 0.75 * (1.0 - depth_smooth))
 
         else:  # parallax_zoom / ai_motion
             ease_t = quintic_ease_in_out(t)
-            zoom = 1.0 + 0.12 * ease_t
-            pan_x = 22.0 * math.sin(t * math.pi * 2.0)
-            pan_y = -18.0 * t
+            zoom = 1.0 + 0.10 * ease_t
+            pan_x = 20.0 * math.sin(t * math.pi * 2.0)
+            pan_y = -15.0 * t
 
             disp_x = (pan_x + (grid_x - target_w / 2.0) * (zoom - 1.0)) * (0.3 + 0.7 * (1.0 - depth_smooth))
             disp_y = (pan_y + (grid_y - target_h / 2.0) * (zoom - 1.0)) * (0.3 + 0.7 * (1.0 - depth_smooth))
@@ -190,6 +188,7 @@ def generate_parallax_frames(
         map_x = (grid_x - disp_x).astype(np.float32)
         map_y = (grid_y - disp_y).astype(np.float32)
 
+        # High quality spatial bicubic remapping
         warped = cv2.remap(img_enhanced, map_x, map_y, interpolation=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
         frames.append(warped)
 

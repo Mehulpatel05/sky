@@ -22,17 +22,11 @@ def get_random_audio_track() -> Optional[Path]:
     return None
 
 def apply_color_grade(frame_rgb: np.ndarray, color_preset: str) -> np.ndarray:
-    """
-    100% Pure & Crystal Clear Photo Preservation.
-    No color distortion or quality degradation.
-    """
+    """100% Pure & Crystal Clear Photo Preservation."""
     return frame_rgb
 
 def apply_motion_graphic_overlay(frame_rgb: np.ndarray, overlay_preset: str, frame_idx: int, total_frames: int) -> np.ndarray:
-    """
-    Keeps photo 100% crystal clear.
-    Disables all obstructive bubbles, particles, and heavy overlays.
-    """
+    """Keeps photo 100% crystal clear."""
     return frame_rgb
 
 def render_reel(
@@ -45,13 +39,13 @@ def render_reel(
 ) -> Path:
     """
     Composites base motion frames + clean typography overlays,
-    merges background audio, and encodes to 1080x1920 crystal clear vertical H.264 mp4 video.
+    merges background audio, and encodes to 1080x1920 ultra-high bitrate vertical H.264 mp4 video.
     """
     total_frames = min(len(raw_frames), len(text_overlay_frames))
     if total_frames == 0:
         raise ValueError("No frames provided for rendering.")
 
-    print(f"[Renderer] Rendering {total_frames} frames (100% crystal clear photo quality)...")
+    print(f"[Renderer] Rendering {total_frames} frames (Visually Lossless 25Mbps HD Quality)...")
 
     if audio_path is None:
         audio_path = get_random_audio_track()
@@ -70,7 +64,7 @@ def render_reel(
             frame_file = temp_path / f"frame_{idx:05d}.png"
             composite_pil.save(frame_file)
 
-        # Build FFmpeg command for ultra-crisp output (CRF 16)
+        # High bitrate, visually lossless H.264 video encoding parameters
         cmd = [
             "ffmpeg", "-y",
             "-framerate", str(fps),
@@ -83,15 +77,22 @@ def render_reel(
             cmd.extend([
                 "-i", str(audio_path),
                 "-t", str(duration_sec),
-                "-c:a", "aac", "-b:a", "192k",
+                "-c:a", "aac", "-b:a", "320k",
                 "-shortest"
             ])
 
         cmd.extend([
             "-c:v", "libx264",
-            "-preset", "medium",
-            "-crf", "16",  # Ultra-high quality visual output
+            "-preset", "slower",
+            "-crf", "12",  # Visually lossless quality (CRF 12)
+            "-b:v", "25M",
+            "-maxrate", "35M",
+            "-bufsize", "50M",
             "-pix_fmt", "yuv420p",
+            "-color_range", "1",
+            "-colorspace", "bt709",
+            "-color_trc", "bt709",
+            "-color_primaries", "bt709",
             "-movflags", "+faststart",
             str(output_path)
         ])
