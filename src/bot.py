@@ -6,13 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from telegram import Update
+from telegram.request import HTTPXRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 from src.config import (
     TELEGRAM_BOT_TOKEN, AUTHORIZED_CHAT_ID, PHOTOS_DIR, REELS_DIR, LOG_FILE, USE_AI_MOTION,
     REEL_DURATION_SEC, FPS
 )
-from src.style_randomizer import generate_reel_style, format_style_summary
+from src.style_randomizer import generate_reel_style, format_style_summary, generate_instagram_caption
 from src.motion_engine import generate_motion
 from src.text_overlay import generate_text_overlay_frames
 from src.renderer import render_reel
@@ -87,9 +88,9 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "🌅 **Welcome to Vadodara Sky Challenge Bot!**\n\n"
         "Send me single or **multiple sky photos (Album)**, and I will automatically "
-        "generate an **advanced 15-second Motion Graphic Reel** with cinematic transitions!\n\n"
+        "generate a **15-second HD Motion Graphic Reel** + **Ready-to-Copy Instagram Caption**!\n\n"
         f"• **Your Chat ID**: `{chat_id}`\n"
-        f"• **Reel Duration**: `{REEL_DURATION_SEC} seconds`\n\n"
+        f"• **Reel Duration**: `{REEL_DURATION_SEC} seconds` (30 FPS HD)\n\n"
         "Commands:\n"
         "• Upload single or multiple photos to render today's reel\n"
         "• `/status` — View challenge progress\n"
@@ -108,7 +109,7 @@ async def status_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 **Vadodara Sky Challenge Status**\n\n"
         f"• **Completed Days**: {completed}/30\n"
         f"• **Next Day**: Day {next_day:02d}\n"
-        f"• **Reel Duration**: {REEL_DURATION_SEC} seconds (Full Motion Graphic Sequence)"
+        f"• **Reel Duration**: {REEL_DURATION_SEC} seconds (30 FPS HD)"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
@@ -135,13 +136,15 @@ async def process_photos_pipeline(update: Update, photo_items: List, day_num: in
 
     status_msg = await update.message.reply_text(
         f"📸 **Received {len(photo_paths)} sky photo(s)** for Day {day_num:02d}!\n"
-        f"⏳ Generating **15-Second Motion Graphic Reel**... Please wait.",
+        f"⏳ Generating **15-Second HD Motion Graphic Reel**... Please wait.",
         parse_mode="Markdown"
     )
 
     try:
+        # 1. Style Selection
         style = generate_reel_style(day_num)
 
+        # 2. Motion Generation (Single or Multi-Photo over 15s @ 30 FPS)
         raw_frames, mode_used = generate_motion(
             image_paths=photo_paths,
             motion_style=style["motion_style"],
@@ -149,12 +152,14 @@ async def process_photos_pipeline(update: Update, photo_items: List, day_num: in
             fps=FPS
         )
 
+        # 3. 15-Second Motion Graphic Text & Progress Bar Overlay
         text_frames = generate_text_overlay_frames(
             day_number=day_num,
             text_animation=style["text_animation"],
             num_frames=len(raw_frames)
         )
 
+        # 4. Composite & Render 15-Second HD Reel
         render_reel(
             raw_frames=raw_frames,
             text_overlay_frames=text_frames,
@@ -163,16 +168,27 @@ async def process_photos_pipeline(update: Update, photo_items: List, day_num: in
             fps=FPS
         )
 
+        # 5. Log Metadata
         log_reel_metadata(day_num, photo_paths, str(reel_path), style)
 
+        # 6. Upload 15-second Reel back to user
         photo_count_str = f"{len(photo_paths)} Photos Album" if len(photo_paths) > 1 else "1 Photo"
-        caption = format_style_summary(style, mode_used) + f"\n📸 **Source**: `{photo_count_str}`\n⏱ **Duration**: `15.0 sec`"
+        video_caption = format_style_summary(style, mode_used) + f"\n📸 **Source**: `{photo_count_str}`\n⏱ **Duration**: `15.0 sec (30 FPS)`"
+        
         with open(reel_path, "rb") as video_file:
             await update.message.reply_video(
                 video=video_file,
-                caption=caption,
+                caption=video_caption,
                 parse_mode="Markdown"
             )
+
+        # 7. Generate & Send Ready-to-Copy Instagram Caption Message
+        ig_caption = generate_instagram_caption(day_num, style, photo_count=len(photo_paths))
+        copy_msg = (
+            f"📋 **Copy Caption for Instagram Post (Day {day_num:02d}):**\n\n"
+            f"```\n{ig_caption}\n```"
+        )
+        await update.message.reply_text(copy_msg, parse_mode="Markdown")
 
         await status_msg.delete()
 
@@ -273,7 +289,16 @@ async def main_async():
     health_server = await asyncio.start_server(handle_health_check, '0.0.0.0', port)
 
     print("🤖 Starting Vadodara Sky Challenge Telegram Bot...")
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+    
+    # Configure robust HTTP request timeouts to prevent connection timeouts on local networks
+    request_config = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0
+    )
+
+    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).request(request_config).build()
 
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("help", start_handler))
@@ -286,7 +311,6 @@ async def main_async():
     await app.updater.start_polling()
 
     print("✓ Vadodara Sky Bot & Web Server successfully started!")
-    # Keep application running indefinitely
     await asyncio.Event().wait()
 
 def run_bot():
